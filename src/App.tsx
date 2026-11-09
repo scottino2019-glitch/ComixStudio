@@ -25,11 +25,23 @@ import {
   Eraser,
   Undo2,
   Grid,
-  Maximize2
+  Maximize2,
+  Image as ImageIcon,
+  Folder,
+  HardDrive,
+  Loader2
 } from 'lucide-react';
 import { CHARACTERS, BACKGROUNDS, STICKERS, BUBBLES, COMIC_SYMBOLS } from './constants';
 import { Asset } from './types';
 import { removeWhiteBackground } from './imageUtils';
+import { 
+  CustomImageItem, 
+  getStoredCustomImages, 
+  saveCustomImage, 
+  deleteCustomImage, 
+  clearAllCustomImages, 
+  processFileForStorage 
+} from './customImageStorage';
 import confetti from 'canvas-confetti';
 
 interface PanelState {
@@ -78,6 +90,24 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'focus' | 'all'>('focus');
   const [activeTab, setActiveTab] = useState<'text' | 'characters' | 'backgrounds' | 'bubbles' | 'stickers' | 'symbols' | 'upload'>('text');
   
+  // Custom Personal Images in Local Storage (IndexedDB / LocalStorage)
+  const [customImages, setCustomImages] = useState<CustomImageItem[]>([]);
+  const [isUploadingCustom, setIsUploadingCustom] = useState<boolean>(false);
+  const [customImageNotice, setCustomImageNotice] = useState<string | null>(null);
+
+  // Load custom images from local storage on startup
+  useEffect(() => {
+    let isMounted = true;
+    getStoredCustomImages().then((items) => {
+      if (isMounted) {
+        setCustomImages(items);
+      }
+    }).catch(err => console.error("Errore caricamento immagini personali:", err));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Selection and Drawing state
   const [selectedObjectType, setSelectedObjectType] = useState<string | null>(null);
   const [selectedTextContent, setSelectedTextContent] = useState<string>('');
@@ -538,38 +568,168 @@ export default function App() {
     }
   };
 
-  // Upload Custom Image
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Add personal image from local storage library onto active canvas
+  const addCustomImageToCanvas = async (item: CustomImageItem, asBackground: boolean = false) => {
+    const canvas = getActiveCanvas();
+    if (!canvas) return;
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      const canvas = getActiveCanvas();
-      if (!canvas || !dataUrl) return;
+    if (isDrawingMode) {
+      setIsDrawingMode(false);
+      canvas.isDrawingMode = false;
+    }
 
-      const img = await fabric.FabricImage.fromURL(dataUrl);
-      const scale = Math.min(300 / img.width!, 300 / img.height!);
-      img.set({
-        scaleX: scale,
-        scaleY: scale,
-        left: 200,
-        top: 120,
-        cornerStyle: 'circle',
-        cornerColor: '#2563eb',
+    try {
+      if (asBackground) {
+        const bgImg = await fabric.FabricImage.fromURL(item.dataUrl);
+        const scaleX = canvas.width! / bgImg.width!;
+        const scaleY = canvas.height! / bgImg.height!;
+        const scale = Math.max(scaleX, scaleY);
+
+        bgImg.set({
+          scaleX: scale,
+          scaleY: scale,
+          left: 0,
+          top: 0,
+          originX: 'left',
+          originY: 'top',
+          selectable: false,
+          evented: false,
+        });
+
+        // Remove any existing background object
+        const legacyBgs = canvas.getObjects().filter(o => (o as any).name === 'background');
+        legacyBgs.forEach(b => canvas.remove(b));
+
+        canvas.backgroundImage = bgImg;
+        canvas.requestRenderAll();
+        bumpRevision();
+      } else {
+        const img = await fabric.FabricImage.fromURL(item.dataUrl);
+        const targetSize = 320;
+        const scale = Math.min(targetSize / img.width!, targetSize / img.height!);
+
+        img.set({
+          scaleX: scale,
+          scaleY: scale,
+          left: 140 + Math.random() * 60,
+          top: 100 + Math.random() * 40,
+          cornerStyle: 'circle',
+          cornerColor: '#2563eb',
+          borderColor: '#2563eb',
+          cornerSize: 10,
+          transparentCorners: false,
+        });
+        (img as any).customName = item.name.slice(0, 20) || 'Foto Personale';
+        (img as any).assetCategory = 'character';
+
+        canvas.add(img);
+        canvas.bringObjectToFront(img);
+        canvas.setActiveObject(img);
+        lastSelectedObjectRef.current = img;
+        canvas.requestRenderAll();
+        bumpRevision();
+      }
+    } catch (err) {
+      console.error('Errore inserimento immagine personale:', err);
+    }
+  };
+
+  // Upload Custom Image(s) and persist to local storage (IndexedDB / LocalStorage)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingCustom(true);
+    setCustomImageNotice('Salvataggio nella memoria locale...');
+
+    try {
+      const addedItems: CustomImageItem[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const processed = await processFileForStorage(file);
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').slice(0, 24);
+        const saved = await saveCustomImage({
+          name: cleanName,
+          dataUrl: processed.dataUrl,
+          sizeBytes: processed.sizeBytes,
+          width: processed.width,
+          height: processed.height,
+        });
+        addedItems.push(saved);
+      }
+
+      setCustomImages(prev => [...addedItems, ...prev]);
+
+      // Automatically add the first uploaded image onto canvas
+      if (addedItems.length > 0) {
+        await addCustomImageToCanvas(addedItems[0], false);
+      }
+
+      setCustomImageNotice(
+        addedItems.length === 1 
+          ? '✅ Immagine salvata nella memoria locale e inserita!' 
+          : `✅ ${addedItems.length} immagini salvate nella memoria locale!`
+      );
+      setTimeout(() => setCustomImageNotice(null), 3500);
+    } catch (err) {
+      console.error('Errore salvataggio file:', err);
+      setCustomImageNotice('⚠️ Errore nel salvataggio del file');
+      setTimeout(() => setCustomImageNotice(null), 3000);
+    } finally {
+      setIsUploadingCustom(false);
+      e.target.value = '';
+    }
+  };
+
+  // Remove white background and save cutout as new custom image
+  const handleRemoveWhiteBgFromCustomImage = async (item: CustomImageItem) => {
+    setIsUploadingCustom(true);
+    setCustomImageNotice('Scontorno sfondo in corso...');
+    try {
+      const transparentDataUrl = await removeWhiteBackground(item.dataUrl);
+      const saved = await saveCustomImage({
+        name: `${item.name} (Scontornato)`,
+        dataUrl: transparentDataUrl,
+        sizeBytes: Math.round((transparentDataUrl.length * 3) / 4),
       });
-      (img as any).customName = file.name.slice(0, 16) || 'Foto Caricata';
-      (img as any).assetCategory = 'character';
-      canvas.add(img);
-      canvas.bringObjectToFront(img);
-      canvas.setActiveObject(img);
-      lastSelectedObjectRef.current = img;
-      canvas.requestRenderAll();
-      bumpRevision();
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+      setCustomImages(prev => [saved, ...prev]);
+      setCustomImageNotice('✅ Versione trasparente salvata in memoria!');
+      setTimeout(() => setCustomImageNotice(null), 3000);
+    } catch (err) {
+      console.error('Errore durante lo scontorno:', err);
+      setCustomImageNotice('⚠️ Impossibile scontornare');
+      setTimeout(() => setCustomImageNotice(null), 3000);
+    } finally {
+      setIsUploadingCustom(false);
+    }
+  };
+
+  // Delete individual custom image
+  const handleDeleteCustomImage = async (id: string, name: string) => {
+    if (!window.confirm(`Vuoi eliminare "${name}" dalla memoria del browser?`)) return;
+    try {
+      await deleteCustomImage(id);
+      setCustomImages(prev => prev.filter(item => item.id !== id));
+      setCustomImageNotice('🗑️ Immagine rimossa dalla memoria locale');
+      setTimeout(() => setCustomImageNotice(null), 2500);
+    } catch (err) {
+      console.error('Errore eliminazione:', err);
+    }
+  };
+
+  // Clear entire custom library
+  const handleClearAllCustomImages = async () => {
+    if (customImages.length === 0) return;
+    if (!window.confirm(`Vuoi eliminare tutte le ${customImages.length} immagini personali salvate nel browser?`)) return;
+    try {
+      await clearAllCustomImages();
+      setCustomImages([]);
+      setCustomImageNotice('🗑️ Libreria personale svuotata');
+      setTimeout(() => setCustomImageNotice(null), 2500);
+    } catch (err) {
+      console.error('Errore pulizia:', err);
+    }
   };
 
   // Get current active or last selected object safely
@@ -914,7 +1074,7 @@ export default function App() {
                   : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
-              📁 Carica
+              📁 I Miei File {customImages.length > 0 && `(${customImages.length})`}
             </button>
           </div>
 
@@ -1183,17 +1343,160 @@ export default function App() {
             )}
 
             {activeTab === 'upload' && (
-              <label className="border-2 border-dashed border-zinc-300 hover:border-zinc-900 hover:bg-zinc-50 transition-all rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer text-center">
-                <Upload size={28} className="text-zinc-400" />
-                <span className="text-xs font-bold text-zinc-800">Carica immagine</span>
-                <span className="text-[10px] text-zinc-400">PNG, JPG fino a 10MB</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
+              <div className="flex flex-col gap-3">
+                {/* PERSISTENCE STATUS BADGE */}
+                <div className="p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl flex items-start gap-2 text-blue-900 shadow-xs">
+                  <HardDrive size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-[11px] font-bold leading-tight">
+                      Memoria Locale Attiva
+                    </p>
+                    <p className="text-[10px] text-blue-700/90 leading-tight mt-0.5">
+                      Tutte le immagini caricate rimangono salvate nel tuo browser (IndexedDB) e non dovrai ricaricarle.
+                    </p>
+                  </div>
+                </div>
+
+                {/* NOTIFICATION TOAST */}
+                {customImageNotice && (
+                  <div className="px-3 py-2 bg-zinc-900 text-white rounded-lg text-xs font-semibold shadow-md flex items-center justify-between">
+                    <span>{customImageNotice}</span>
+                  </div>
+                )}
+
+                {/* UPLOAD BOX */}
+                <label className={`border-2 border-dashed rounded-2xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer text-center transition-all ${
+                  isUploadingCustom 
+                    ? 'border-blue-400 bg-blue-50/50 cursor-wait' 
+                    : 'border-zinc-300 hover:border-blue-600 hover:bg-blue-50/30'
+                }`}>
+                  {isUploadingCustom ? (
+                    <Loader2 size={26} className="text-blue-600 animate-spin" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shadow-xs">
+                      <Upload size={20} />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-zinc-900">
+                      {isUploadingCustom ? 'Salvataggio in corso...' : 'Carica immagini personali'}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      PNG, JPG, WebP (anche file multipli)
+                    </span>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={isUploadingCustom}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                {/* GALLERY HEADER */}
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
+                    <Folder size={14} className="text-zinc-600" />
+                    Libreria Personale ({customImages.length})
+                  </span>
+                  {customImages.length > 0 && (
+                    <button
+                      onClick={handleClearAllCustomImages}
+                      className="text-[10px] font-bold text-red-600 hover:text-red-700 hover:underline cursor-pointer"
+                    >
+                      Svuota
+                    </button>
+                  )}
+                </div>
+
+                {/* EMPTY STATE */}
+                {customImages.length === 0 && (
+                  <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-center flex flex-col items-center gap-1.5">
+                    <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">
+                      <ImageIcon size={18} />
+                    </div>
+                    <p className="text-xs font-bold text-zinc-700">Nessuna immagine personale salvata</p>
+                    <p className="text-[10px] text-zinc-500 max-w-[210px] leading-relaxed">
+                      Carica le tue foto, disegni su carta o sfondi personalizzati: rimarranno sempre a tua disposizione.
+                    </p>
+                  </div>
+                )}
+
+                {/* GALLERY GRID */}
+                {customImages.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {customImages.map((item) => (
+                      <div
+                        key={item.id}
+                        className="group bg-white border border-zinc-200 hover:border-blue-500 rounded-xl overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col"
+                      >
+                        {/* THUMBNAIL */}
+                        <div 
+                          onClick={() => addCustomImageToCanvas(item, false)}
+                          className="w-full aspect-[4/3] bg-zinc-100 overflow-hidden relative cursor-pointer flex items-center justify-center p-1"
+                          title="Clicca per inserire nella scena attiva"
+                        >
+                          <img
+                            src={item.dataUrl}
+                            alt={item.name}
+                            className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="px-2 py-1 bg-white text-zinc-950 font-bold text-[10px] rounded shadow-xs flex items-center gap-1">
+                              <Plus size={11} /> Inserisci
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* INFO & ACTIONS */}
+                        <div className="p-2 flex flex-col gap-1.5 bg-zinc-50 border-t border-zinc-100">
+                          <span className="text-[11px] font-bold text-zinc-900 truncate" title={item.name}>
+                            {item.name}
+                          </span>
+
+                          <div className="grid grid-cols-2 gap-1 pt-0.5">
+                            <button
+                              onClick={() => addCustomImageToCanvas(item, false)}
+                              className="py-1 px-1 bg-white hover:bg-blue-50 border border-zinc-200 hover:border-blue-400 rounded text-[10px] font-bold text-zinc-800 hover:text-blue-600 transition-colors cursor-pointer flex items-center justify-center gap-0.5"
+                              title="Inserisci come personaggio/oggetto"
+                            >
+                              <Plus size={10} /> Oggetto
+                            </button>
+                            <button
+                              onClick={() => addCustomImageToCanvas(item, true)}
+                              className="py-1 px-1 bg-white hover:bg-emerald-50 border border-zinc-200 hover:border-emerald-400 rounded text-[10px] font-bold text-zinc-800 hover:text-emerald-700 transition-colors cursor-pointer flex items-center justify-center gap-0.5"
+                              title="Imposta come sfondo scena"
+                            >
+                              Sfondo
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-zinc-200/60 text-[9px]">
+                            <button
+                              onClick={() => handleRemoveWhiteBgFromCustomImage(item)}
+                              disabled={isUploadingCustom}
+                              className="text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-0.5 cursor-pointer hover:underline"
+                              title="Rimuovi lo sfondo bianco dal disegno"
+                            >
+                              <Sparkles size={9} /> Scontorna
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteCustomImage(item.id, item.name)}
+                              className="text-red-500 hover:text-red-700 p-0.5 rounded hover:bg-red-50 cursor-pointer"
+                              title="Elimina dalla memoria"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </aside>
