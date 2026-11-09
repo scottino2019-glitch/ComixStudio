@@ -1698,7 +1698,7 @@ function ComicPanelCard({
   const populateInitialScene = async (canvas: fabric.Canvas, panelIndex: number) => {
     try {
       if (panelIndex === 0) {
-        const bgImg = await fabric.FabricImage.fromURL('/src/assets/images/manga_bg_classroom_1794185192737.jpg');
+        const bgImg = await fabric.FabricImage.fromURL('/assets/images/manga_bg_classroom_1794185192737.jpg');
         const scaleX = 800 / bgImg.width!;
         const scaleY = 500 / bgImg.height!;
         const scale = Math.max(scaleX, scaleY);
@@ -1714,7 +1714,7 @@ function ComicPanelCard({
         });
         canvas.backgroundImage = bgImg;
 
-        const charDataUrl = await removeWhiteBackground('/src/assets/images/anime_boy_school_color_1794186454623.jpg');
+        const charDataUrl = await removeWhiteBackground('/assets/images/anime_boy_school_color_1794186454623.jpg');
         const charImg = await fabric.FabricImage.fromURL(charDataUrl);
         charImg.scaleToHeight(380);
         charImg.set({
@@ -1727,7 +1727,7 @@ function ComicPanelCard({
         (charImg as any).assetCategory = 'character';
         canvas.add(charImg);
 
-        const catDataUrl = await removeWhiteBackground('/src/assets/images/anime_chibi_cat_color_1794186482140.jpg');
+        const catDataUrl = await removeWhiteBackground('/assets/images/anime_chibi_cat_color_1794186482140.jpg');
         const catImg = await fabric.FabricImage.fromURL(catDataUrl);
         catImg.scaleToHeight(130);
         catImg.set({
@@ -1784,7 +1784,7 @@ function ComicPanelCard({
         canvas.requestRenderAll();
         onCanvasModified?.();
       } else if (panelIndex === 1) {
-        const bgImg = await fabric.FabricImage.fromURL('/src/assets/images/manga_bg_school_rooftop_1794185211550.jpg');
+        const bgImg = await fabric.FabricImage.fromURL('/assets/images/manga_bg_school_rooftop_1794185211550.jpg');
         const scaleX = 800 / bgImg.width!;
         const scaleY = 500 / bgImg.height!;
         const scale = Math.max(scaleX, scaleY);
@@ -1800,7 +1800,7 @@ function ComicPanelCard({
         });
         canvas.backgroundImage = bgImg;
 
-        const girlDataUrl = await removeWhiteBackground('/src/assets/images/anime_girl_school_color_1794186454357.jpg');
+        const girlDataUrl = await removeWhiteBackground('/assets/images/anime_girl_school_color_1794186454357.jpg');
         const girlImg = await fabric.FabricImage.fromURL(girlDataUrl);
         girlImg.scaleToHeight(380);
         girlImg.set({
@@ -1813,7 +1813,7 @@ function ComicPanelCard({
         (girlImg as any).assetCategory = 'character';
         canvas.add(girlImg);
 
-        const boyDataUrl = await removeWhiteBackground('/src/assets/images/anime_boy_casual_color_1794186469608.jpg');
+        const boyDataUrl = await removeWhiteBackground('/assets/images/anime_boy_casual_color_1794186469608.jpg');
         const boyImg = await fabric.FabricImage.fromURL(boyDataUrl);
         boyImg.scaleToHeight(370);
         boyImg.set({

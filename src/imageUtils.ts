@@ -2,6 +2,7 @@
 // Automatically cuts out solid/near-white backgrounds from characters and stickers
 
 export async function removeWhiteBackground(imageUrl: string, threshold = 238): Promise<string> {
+  const normalizedUrl = imageUrl.replace(/^\/src\/assets\/images\//, '/assets/images/');
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -111,10 +112,10 @@ export async function removeWhiteBackground(imageUrl: string, threshold = 238): 
         resolve(canvas.toDataURL('image/png'));
       } catch (e) {
         console.warn('Could not remove background:', e);
-        resolve(imageUrl);
+        resolve(normalizedUrl);
       }
     };
-    img.onerror = () => resolve(imageUrl);
-    img.src = imageUrl;
+    img.onerror = () => resolve(normalizedUrl);
+    img.src = normalizedUrl;
   });
 }
