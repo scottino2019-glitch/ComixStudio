@@ -2017,7 +2017,7 @@ function ComicPanelCard({
         });
         canvas.backgroundImage = bgImg;
 
-        const charDataUrl = await removeWhiteBackground('/assets/images/anime_boy_school_color_1794186454623.jpg');
+        const charDataUrl = await removeWhiteBackground('/assets/images/anime_school_boy_1794230587644.jpg');
         const charImg = await fabric.FabricImage.fromURL(charDataUrl);
         charImg.scaleToHeight(380);
         charImg.set({

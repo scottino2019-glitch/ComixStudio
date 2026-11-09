@@ -6,7 +6,7 @@ export const CHARACTERS: Asset[] = [
     id: 'manga-boy-school',
     name: 'Studente Ragazzo (A Colori)',
     category: 'character',
-    url: '/assets/images/anime_boy_school_color_1794186454623.jpg',
+    url: '/assets/images/anime_school_boy_1794230587644.jpg',
   },
   {
     id: 'manga-girl-school',
